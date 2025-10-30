@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<h4 class="fw-bold text-center mb-4">📊 Waste Detection Reports</h4>
+
+<div class="container">
+  <table class="table table-bordered table-striped shadow-sm">
+    <thead class="table-dark text-center">
+      <tr>
+        <th>ID</th>
+        <th>Location</th>
+        <th>Status</th>
+        <th>Timestamp</th>
+      </tr>
+    </thead>
+    <tbody id="reportTable">
+      <tr><td colspan="4" class="text-center">Loading...</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<script>
+fetch('/api/garbage')
+  .then(res => res.json())
+  .then(data => {
+    const table = document.getElementById('reportTable');
+    table.innerHTML = '';
+    data.forEach(d => {
+      table.innerHTML += `
+        <tr>
+          <td>${d.id}</td>
+          <td>${d.address}</td>
+          <td><span class="badge bg-${d.status === 'critical' ? 'danger' : d.status === 'pending' ? 'warning' : 'success'}">${d.status}</span></td>
+          <td>${d.timestamp}</td>
+        </tr>`;
+    });
+  });
+</script>
+{% endblock %}
