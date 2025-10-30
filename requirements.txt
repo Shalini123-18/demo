@@ -1,2 +1,7 @@
 flask
 flask-cors
+opencv-python
+opencv-contrib-python
+pandas
+numpy
+ultralytics
