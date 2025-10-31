@@ -1,43 +1,71 @@
-from flask import Flask, render_template, jsonify
-from datetime import datetime
+from flask import Flask, render_template, jsonify, request
+import sqlite3
+import os
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static', template_folder='templates')
 
-# Dummy garbage detection data
-detections = [
-    {"id": 1, "lat": 28.6139, "lon": 77.2090, "status": "critical", "address": "Connaught Place, Delhi",
-     "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "image_url": "https://cdn-icons-png.flaticon.com/512/679/679922.png"},
-    {"id": 2, "lat": 28.7041, "lon": 77.1025, "status": "pending", "address": "Karol Bagh, Delhi",
-     "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "image_url": "https://cdn-icons-png.flaticon.com/512/3081/3081559.png"}
-]
+DB_PATH = "database.db"
+
+# --- Initialize DB if missing ---
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS detections (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            latitude REAL,
+            longitude REAL,
+            garbage_type TEXT,
+            confidence REAL,
+            status TEXT,
+            image_path TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+    conn.commit()
+    conn.close()
+
+init_db()
+
+# --- ROUTES ---
 
 @app.route('/')
-def home():
-    return render_template('index.html')
+def dashboard():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT * FROM detections ORDER BY timestamp DESC")
+    detections = c.fetchall()
+    conn.close()
+    return render_template('dashboard.html', detections=detections)
 
-@app.route('/reports')
-def reports():
-    return render_template('reports.html')
+@app.route('/api/detections', methods=['POST'])
+def add_detection():
+    data = request.get_json()
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("""
+        INSERT INTO detections (latitude, longitude, garbage_type, confidence, status, image_path)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (
+        data.get("latitude"),
+        data.get("longitude"),
+        data.get("garbage_type"),
+        data.get("confidence"),
+        data.get("status"),
+        data.get("image_path")
+    ))
+    conn.commit()
+    conn.close()
+    return jsonify({"message": "Detection added successfully"}), 201
 
-@app.route('/alerts')
-def alerts():
-    return render_template('alerts.html')
-
-@app.route('/settings')
-def settings():
-    return render_template('settings.html')
-
-@app.route("/api/garbage")
-def get_garbage():
+@app.route('/api/detections', methods=['GET'])
+def get_detections():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT * FROM detections ORDER BY timestamp DESC")
+    detections = c.fetchall()
+    conn.close()
     return jsonify(detections)
-
-@app.route("/api/route")
-def get_route():
-    return jsonify({"path": [[28.6139, 77.2090], [28.7041, 77.1025]]})
-
-@app.route("/api/alert", methods=["POST"])
-def send_alert():
-    return jsonify({"message": "Alert sent successfully to MCD officials!"})
 
 if __name__ == "__main__":
     app.run(debug=True)

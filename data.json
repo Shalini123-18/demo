@@ -1,9 +1,0 @@
-[
-    {
-        "detid": 1,
-        "garbage_type": ["plastic", "organic"],
-        "latitudes": 34.0532,
-        "longitudes": 118.2437,
-        "status": "uncleaned" 
-    }
-]
