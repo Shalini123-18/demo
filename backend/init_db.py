@@ -1,24 +1,20 @@
-import sqlite3
+import sqlite3, os
 
-# Connect to (or create) the database
-conn = sqlite3.connect("database.db")
-cursor = conn.cursor()
+db_path = os.path.join(os.path.dirname(__file__), "database.db")
+conn = sqlite3.connect(db_path)
+c = conn.cursor()
 
-# Create table for garbage detections
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS detections (
+c.execute('''CREATE TABLE IF NOT EXISTS detections (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type TEXT,
+    confidence REAL,
+    status TEXT,
     latitude REAL,
     longitude REAL,
-    status TEXT,
-    garbage_type TEXT,
-    detection_id TEXT,
     image_path TEXT,
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-""")
+    timestamp TEXT
+)''')
 
 conn.commit()
 conn.close()
-
-print("✅ Database initialized successfully with 'detections' table.")
+print("✅ Database initialized successfully.")

@@ -1,94 +1,78 @@
 import cv2
-import requests
-import time
+import sqlite3
 import os
 from datetime import datetime
 from ultralytics import YOLO
 
-# ========== CONFIGURATION ==========
-BACKEND_URL = "http://127.0.0.1:5000/api/detect"  # Flask backend
-SAVE_PATH = "static/detections"                   # Folder to save snapshots
-CAM_INDEX = 0                                     # Webcam index (0 = default)
-CONF_THRESHOLD = 0.6                              # Confidence threshold
-GARBAGE_CLASSES = ["plastic", "paper", "bottle", "garbage", "waste", "trash"]  # change as per dataset
+# === PATH SETUP ===
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, "..", "backend", "database.db")
+SAVE_DIR = os.path.join(BASE_DIR, "..", "backend", "static", "detections")
+os.makedirs(SAVE_DIR, exist_ok=True)
 
-# ===================================
+# === YOLO MODEL LOAD ===
+print("🔄 Loading YOLOv8 Waste Detection Model...")
+# Option 1: Load from Hugging Face or Roboflow (online model)
+# model = YOLO('turhancan97/yolov8-segment-trash-detection')
 
-# Ensure snapshot directory exists
-if not os.path.exists(SAVE_PATH):
-    os.makedirs(SAVE_PATH)
+# Option 2: Load your locally downloaded model
+model = YOLO(os.path.join(BASE_DIR, "yolov8m-seg.pt"))
+print("✅ YOLOv8 Waste Detection model loaded successfully.")
 
-# Load YOLOv8 model (choose your model variant)
-model = YOLO("yolov8n.pt")  # replace with your trained model if available
-
-# Open webcam
-cap = cv2.VideoCapture(CAM_INDEX)
+# === CAMERA INIT ===
+cap = cv2.VideoCapture(0)
 if not cap.isOpened():
-    print("Error: Could not open webcam.")
-    exit()
+    raise RuntimeError("❌ Could not open webcam. Try a different camera index or check permissions.")
 
-print("Webcam started... Press 'q' to exit")
+print("🎥 Webcam feed started... Press 'q' to quit.")
 
+# === DETECTION LOOP ===
 while True:
     ret, frame = cap.read()
     if not ret:
-        print("Frame not captured. Retrying...")
+        print("⚠️ Frame not captured, retrying...")
         continue
 
-    # Run YOLOv8 inference
-    results = model(frame, stream=True)
+    # Run YOLO detection
+    results = model.predict(source=frame, conf=0.6, verbose=False)
 
-    for r in results:
-        boxes = r.boxes
+    for result in results:
+        boxes = result.boxes
         for box in boxes:
-            cls_id = int(box.cls[0])
             conf = float(box.conf[0])
-            label = model.names[cls_id]
+            cls = int(box.cls[0])
+            label = model.names[cls]  # e.g., "plastic", "metal", etc.
 
-            # Filter detections
-            if conf < CONF_THRESHOLD:
-                continue
-            if label.lower() not in GARBAGE_CLASSES:
-                continue
-
-            # Draw detection box
+            # Draw bounding box
             x1, y1, x2, y2 = map(int, box.xyxy[0])
             cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
             cv2.putText(frame, f"{label} {conf:.2f}", (x1, y1 - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
-            # Save snapshot
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            img_name = f"{label}_{timestamp}.jpg"
-            img_path = os.path.join(SAVE_PATH, img_name)
-            cv2.imwrite(img_path, frame)
+            # === SAVE DETECTION TO DATABASE ===
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            filename = f"detection_{timestamp.replace(':', '-')}.jpg"
+            filepath = os.path.join(SAVE_DIR, filename)
+            cv2.imwrite(filepath, frame)
 
-            # Send data to backend
-            try:
-                payload = {
-                    "lat": 28.6139,   # dummy coords for now
-                    "lon": 77.2090,
-                    "type": label,
-                    "confidence": conf,
-                    "status": "uncleaned"
-                }
-                res = requests.post(BACKEND_URL, data=payload, timeout=3)
-                if res.status_code == 200:
-                    print(f"Sent to backend: {label} ({conf:.2f})")
-                else:
-                    print(f"Backend error: {res.status_code}")
-            except Exception as e:
-                print(f"Failed to send data: {e}")
+            relative_path = f"static/detections/{filename}"
 
-            time.sleep(1)  # avoid sending too many detections per second
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            c.execute("""
+                INSERT INTO detections (type, confidence, status, latitude, longitude, image_path, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (label, conf, "uncleaned", 28.6139, 77.2090, relative_path, timestamp))
+            conn.commit()
+            conn.close()
+            print(f"💾 Saved detection: {label} ({conf:.2f})")
 
-    # Display feed
     cv2.imshow("Garbage Detection - YOLOv8", frame)
 
-    # Exit key
+    # Press Q to quit
     if cv2.waitKey(1) & 0xFF == ord('q'):
+        print("🛑 Exiting detection loop.")
         break
 
 cap.release()
 cv2.destroyAllWindows()
-print("Detection stopped.")

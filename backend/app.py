@@ -1,71 +1,30 @@
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, send_from_directory
 import sqlite3
 import os
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 
-DB_PATH = "database.db"
+DB_PATH = os.path.join(os.path.dirname(__file__), 'database.db')
 
-# --- Initialize DB if missing ---
-def init_db():
+def get_data():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS detections (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            latitude REAL,
-            longitude REAL,
-            garbage_type TEXT,
-            confidence REAL,
-            status TEXT,
-            image_path TEXT,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-        );
-    """)
-    conn.commit()
+    c.execute("SELECT id, type, confidence, status, latitude, longitude, image_path, timestamp FROM detections")
+    rows = c.fetchall()
     conn.close()
-
-init_db()
-
-# --- ROUTES ---
+    return rows
 
 @app.route('/')
 def dashboard():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT * FROM detections ORDER BY timestamp DESC")
-    detections = c.fetchall()
-    conn.close()
-    return render_template('dashboard.html', detections=detections)
+    return render_template('dashboard.html')
 
-@app.route('/api/detections', methods=['POST'])
-def add_detection():
-    data = request.get_json()
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("""
-        INSERT INTO detections (latitude, longitude, garbage_type, confidence, status, image_path)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (
-        data.get("latitude"),
-        data.get("longitude"),
-        data.get("garbage_type"),
-        data.get("confidence"),
-        data.get("status"),
-        data.get("image_path")
-    ))
-    conn.commit()
-    conn.close()
-    return jsonify({"message": "Detection added successfully"}), 201
+@app.route('/data')
+def data():
+    return jsonify(get_data())
 
-@app.route('/api/detections', methods=['GET'])
-def get_detections():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT * FROM detections ORDER BY timestamp DESC")
-    detections = c.fetchall()
-    conn.close()
-    return jsonify(detections)
+@app.route('/static/detections/<path:filename>')
+def serve_detection_image(filename):
+    return send_from_directory(os.path.join(app.static_folder, 'detections'), filename)
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     app.run(debug=True)
