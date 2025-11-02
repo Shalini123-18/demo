@@ -8,3 +8,6 @@ ultralytics
 requests
 torch
 geopy
+datasets
+pillow
+tqdm
